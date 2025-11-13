@@ -1,0 +1,6 @@
+# Force GitHub to recognize this as a Rust project
+*.rs linguist-language=Rust
+*.sol linguist-vendored=true
+contracts/** linguist-vendored=true
+lib/** linguist-vendored=true
+
