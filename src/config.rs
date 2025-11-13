@@ -6,7 +6,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn from_env() -> anyhow::Result<Self> {
         Ok(Config {
             rpc_url: std::env::var("RPC_URL")
                 .unwrap_or_else(|_| "https://eth.llamarpc.com".to_string()),
