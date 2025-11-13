@@ -4,3 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+tokio = { version = "1.0", features = ["full"] }
+alloy = { version = "1.1", features = ["provider-http", "rpc-types"] }
+diesel = { version = "2.1", features = ["sqlite", "r2d2"] }
+diesel_migrations = "2.1"
+dotenvy = "0.15"
+hex = "0.4"
