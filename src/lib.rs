@@ -36,7 +36,10 @@ pub fn init_logging() -> Result<()> {
 }
 
 pub async fn run(config: Config) -> Result<()> {
+    // Format SQLite connection URL (Diesel requires "sqlite://" prefix)
     let database_url = format!("sqlite://{}", config.db_path);
+
+    // Establish database connection, panic if connection fails
     let mut conn = SqliteConnection::establish(&database_url)
         .unwrap_or_else(|_| panic!("Error connecting to {}", database_url));
 
@@ -51,6 +54,7 @@ pub async fn run(config: Config) -> Result<()> {
     info!("  Chain ID: {}", config.chain_id);
     info!("  Start Block: {}", config.start_block);
     info!("  DB Path: {}", config.db_path);
+    info!("  Token Address: {:#x}", config.token_address);
 
     // TODO: Create mpsc channels for pipeline
     // let (fetcher_tx, parser_rx) = tokio::sync::mpsc::channel(100);

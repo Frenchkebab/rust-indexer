@@ -1,8 +1,11 @@
+use alloy_primitives::Address;
+
 pub struct Config {
     pub rpc_url: String,
     pub start_block: u64,
     pub db_path: String,
     pub chain_id: u64,
+    pub token_address: Address,
 }
 
 impl Config {
@@ -16,6 +19,9 @@ impl Config {
             db_path: std::env::var("DB_PATH").unwrap_or_else(|_| "indexer.db".to_string()),
             chain_id: std::env::var("CHAIN_ID")
                 .unwrap_or_else(|_| "11155111".to_string())
+                .parse()?,
+            token_address: std::env::var("TOKEN_ADDRESS")
+                .expect("TOKEN_ADDRESS must be set")
                 .parse()?,
         })
     }

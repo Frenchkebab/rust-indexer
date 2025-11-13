@@ -46,10 +46,11 @@ src/
    Example:
 
    ```env
-   RPC_URL=https://ethereum-sepolia-rpc.publicnode.com
+   RPC_URL=http://127.0.0.1:8545
    START_BLOCK=0
    DB_PATH=indexer.db
-   CHAIN_ID=11155111
+   CHAIN_ID=31337
+   TOKEN_ADDRESS=0x0000000000000000000000000000000000000000
    ```
 
 2. Build and run:
