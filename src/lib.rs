@@ -57,10 +57,22 @@ pub async fn run(config: Config) -> Result<()> {
     info!("  Token Address: {:#x}", config.token_address);
 
     // Create Alloy provider for RPC access
-    let provider = indexer::AlloyProvider {
+    let mut provider = indexer::AlloyProvider {
         url: config.rpc_url.parse()?,
         token_address: config.token_address,
     };
+
+    // Fetch chain_id from RPC and validate against config
+    use indexer::LogsProvider;
+    let rpc_chain_id = provider.chain_id()?;
+    if rpc_chain_id != config.chain_id {
+        anyhow::bail!(
+            "Chain ID mismatch: RPC returned {} but config has {}",
+            rpc_chain_id,
+            config.chain_id
+        );
+    }
+    info!("Chain ID verified: {} (matches RPC)", rpc_chain_id);
 
     // Set start block if not already set
     let is_start_set = indexer::start_from(&mut conn, config.chain_id, config.start_block)?;

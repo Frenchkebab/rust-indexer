@@ -4,7 +4,7 @@ use alloy::providers::Provider; // Provider trait for RPC operations (get_block_
 use alloy::rpc::types::Filter; // Filter type for constructing log queries
 use alloy::rpc::types::eth::Log; // Log type representing Ethereum event logs
 use alloy::transports::http::reqwest::Url; // URL type for HTTP RPC endpoints
-use anyhow::{Context, Result}; // Error handling utilities (Context for error messages, Result for error propagation)
+use anyhow::Result; // Error handling utilities
 use diesel::prelude::*; // Diesel ORM prelude (Connection, QueryDsl, etc.) // Database schema definitions (sync, transfers tables)
 
 // keccak256 hash of the Transfer event signature
@@ -13,8 +13,10 @@ const TRANSFER_EVENT_SIGNATURE: &str =
 
 pub trait LogsProvider {
     fn latest_block(&mut self) -> Result<u64>;
-    
-    fn logs(&self, start_block: u64, end_block: u64) -> Result<impl IntoIterator<Item = Log>>; // Fetch logs (events) within a block range
+
+    fn chain_id(&mut self) -> Result<u64>;
+
+    fn logs(&self, start_block: u64, end_block: u64) -> Result<impl IntoIterator<Item = Log>>;
 }
 
 #[derive(Clone)]
@@ -38,6 +40,17 @@ impl LogsProvider for AlloyProvider {
         // Block on the async get_block_number() call and return the result
         // This converts the async operation to a synchronous one
         Ok(rt.block_on(provider.get_block_number())?)
+    }
+
+    fn chain_id(&mut self) -> Result<u64> {
+        // Create tokio runtime for async operations (Diesel is synchronous)
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        let provider = alloy::providers::ProviderBuilder::new().connect_http(self.url.clone());
+        // Use eth_chainId RPC method
+        let chain_id = rt.block_on(provider.get_chain_id())?;
+        Ok(chain_id.into())
     }
 
     // Fetch ERC20 Transfer event logs within a block range
@@ -72,22 +85,29 @@ impl LogsProvider for AlloyProvider {
 pub fn start_from(conn: &mut diesel::SqliteConnection, chain_id: u64, start: u64) -> Result<bool> {
     // Update the sync table if the current block number is less than (start - 1)
     // Using (start - 1) to start indexing from the 'start' block
-    diesel::update(schema::sync::table)
-        .filter(schema::sync::chain_id.eq(chain_id as i64))
-        .filter(schema::sync::block_number.lt(start as i64 - 1)) // Only update if current < (start - 1)
-        .set(schema::sync::block_number.eq(start as i64 - 1)) // Set to (start - 1)
-        .execute(conn) // Execute the update query
-        .map(|x| x > 0) // Return true if any rows were updated (x > 0)
-        .context("failed to set start block") // Add error context if update fails
+    let start_block_value = start as i64 - 1;
+
+    // Use upsert: insert if not exists, update if exists and block_number is less
+    diesel::insert_into(schema::sync::table)
+        .values((
+            schema::sync::chain_id.eq(chain_id as i32),
+            schema::sync::block_number.eq(start_block_value),
+        ))
+        .on_conflict(schema::sync::chain_id)
+        .do_update()
+        .set(schema::sync::block_number.eq(start_block_value))
+        .execute(conn)?;
+
+    Ok(true)
 }
 
 // Main event loop for continuous indexing
 // This function will run indefinitely, fetching and processing blocks until interrupted
 pub fn event_loop(
     _conn: &mut diesel::SqliteConnection, // DB connection
-    _chain_id: u64,                        // Chain ID for DB operations
-    _provider: impl LogsProvider,          // RPC provider
-    _range_size: u64,                      // Num of blocks per iteration
+    _chain_id: u64,                       // Chain ID for DB operations
+    _provider: impl LogsProvider,         // RPC provider
+    _range_size: u64,                     // Num of blocks per iteration
 ) -> Result<()> {
     // TODO: Fetch last updated block from the db
     // TODO: Loop until interrupted
