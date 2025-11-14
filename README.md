@@ -105,12 +105,12 @@ CREATE INDEX idx_to     ON transfers(to_addr);
 ```text
  ┌────────────┐        ┌──────────────┐        ┌────────────┐
  │  Fetcher   │────→──▶│    Parser    │────→──▶│  Storage   │
- │ (RPC logs) │  mpsc  │ (ABI decode) │  mpsc  │  (SQLite)  │
+ │ (RPC logs) │        │ (ABI decode) │        │  (SQLite)  │
  └────────────┘        └──────────────┘        └────────────┘
 ```
 
-Each stage runs as a separate Tokio task connected via `mpsc` channels,  
-allowing concurrent fetching, decoding, and writing.
+Sequential processing: fetch logs from RPC, decode Transfer events, and store in SQLite.
+Each block range is processed in order to maintain consistency.
 
 ---
 
