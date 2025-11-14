@@ -1,11 +1,30 @@
 use crate::schema;
-use alloy::primitives::Address; // Alloy primitives for Ethereum types (Address, B256, U256, etc.)
-use alloy::providers::Provider; // Provider trait for RPC operations (get_block_number, get_logs, etc.)
-use alloy::rpc::types::Filter; // Filter type for constructing log queries
-use alloy::rpc::types::eth::Log; // Log type representing Ethereum event logs
-use alloy::transports::http::reqwest::Url; // URL type for HTTP RPC endpoints
-use anyhow::Result; // Error handling utilities
-use diesel::prelude::*; // Diesel ORM prelude (Connection, QueryDsl, etc.) // Database schema definitions (sync, transfers tables)
+use alloy::primitives::Address;
+use alloy::providers::Provider;
+use alloy::rpc::types::Filter;
+use alloy::rpc::types::eth::Log;
+use alloy::transports::http::reqwest::Url;
+use diesel::prelude::*;
+
+#[derive(thiserror::Error, Debug)]
+pub enum IndexerError {
+    #[error("RPC error: {0}")]
+    Rpc(String),
+
+    #[error("Database error: {0}")]
+    Database(#[from] diesel::result::Error),
+
+    #[error("Chain ID mismatch: RPC returned {rpc} but expected {expected}")]
+    ChainIdMismatch { rpc: u64, expected: u64 },
+
+    #[error("Runtime error: {0}")]
+    Runtime(#[from] std::io::Error),
+
+    #[error("Parse error: {0}")]
+    Parse(String),
+}
+
+pub type Result<T> = std::result::Result<T, IndexerError>;
 
 // keccak256 hash of the Transfer event signature
 const TRANSFER_EVENT_SIGNATURE: &str =
@@ -28,41 +47,50 @@ pub struct AlloyProvider {
 impl LogsProvider for AlloyProvider {
     // Fetch the latest block number from the RPC endpoint
     fn latest_block(&mut self) -> Result<u64> {
-        // Create a single-threaded tokio runtime for async operations
-        // This is needed because Diesel operations are synchronous
+        // Create tokio runtime for async operations (Diesel is synchronous)
         let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all() // Enable all tokio features (timer, io, etc.)
-            .build()?; // Build the runtime, propagate errors
+            .enable_all()
+            .build()
+            .map_err(|e| IndexerError::Runtime(e))?;
 
-        // Create an Alloy HTTP provider connected to the RPC URL (Alloy provider)
+        // Create Alloy HTTP provider connected to the RPC URL
         let provider = alloy::providers::ProviderBuilder::new().connect_http(self.url.clone());
-
         // Block on the async get_block_number() call and return the result
         // This converts the async operation to a synchronous one
-        Ok(rt.block_on(provider.get_block_number())?)
+        rt.block_on(provider.get_block_number())
+            .map_err(|e| IndexerError::Rpc(format!("Failed to get block number: {:?}", e)))
     }
 
+    // Fetch chain_id from RPC endpoint
     fn chain_id(&mut self) -> Result<u64> {
         // Create tokio runtime for async operations (Diesel is synchronous)
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
-            .build()?;
+            .build()
+            .map_err(|e| IndexerError::Runtime(e))?;
+
+        // Create Alloy HTTP provider connected to the RPC URL
         let provider = alloy::providers::ProviderBuilder::new().connect_http(self.url.clone());
         // Use eth_chainId RPC method
-        let chain_id = rt.block_on(provider.get_chain_id())?;
+        let chain_id = rt
+            .block_on(provider.get_chain_id())
+            .map_err(|e| IndexerError::Rpc(format!("Failed to get chain ID: {:?}", e)))?;
         Ok(chain_id.into())
     }
 
     // Fetch ERC20 Transfer event logs within a block range
     fn logs(&self, start_block: u64, end_block: u64) -> Result<impl IntoIterator<Item = Log>> {
-        // Create a single-threaded tokio runtime for async operations
+        // Create tokio runtime for async operations (Diesel is synchronous)
         let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all() // Enable all tokio features
-            .build()?; // Build the runtime
+            .enable_all()
+            .build()
+            .map_err(|e| IndexerError::Runtime(e))?;
 
-        // Parse the Transfer event signature into a 32-byte fixed array
-        // This will be used as topic0 in the log filter
-        let transfer_topic: alloy::primitives::FixedBytes<32> = TRANSFER_EVENT_SIGNATURE.parse()?;
+        // Parse Transfer event signature as topic0 for log filtering
+        let transfer_topic: alloy::primitives::FixedBytes<32> =
+            TRANSFER_EVENT_SIGNATURE.parse().map_err(|e| {
+                IndexerError::Parse(format!("Failed to parse transfer signature: {:?}", e))
+            })?;
 
         // Build a log filter to query Transfer events
         let filter = Filter::new()
@@ -71,12 +99,12 @@ impl LogsProvider for AlloyProvider {
             .address(self.token_address) // Filter by token contract address
             .event_signature(transfer_topic); // Filter by Transfer event signature (topic0)
 
-        // Create an Alloy HTTP provider connected to the RPC URL
+        // Create Alloy HTTP provider connected to the RPC URL
         let provider = alloy::providers::ProviderBuilder::new().connect_http(self.url.clone());
-
         // Block on the async get_logs() call with the filter and return the logs
         // This converts the async operation to a synchronous one
-        Ok(rt.block_on(provider.get_logs(&filter))?)
+        rt.block_on(provider.get_logs(&filter))
+            .map_err(|e| IndexerError::Rpc(format!("Failed to get logs: {:?}", e)))
     }
 }
 

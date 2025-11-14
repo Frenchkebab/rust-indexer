@@ -64,13 +64,15 @@ pub async fn run(config: Config) -> Result<()> {
 
     // Fetch chain_id from RPC and validate against config
     use indexer::LogsProvider;
-    let rpc_chain_id = provider.chain_id()?;
+    let rpc_chain_id = provider
+        .chain_id()
+        .map_err(|e| anyhow::anyhow!("Failed to get chain ID: {}", e))?;
     if rpc_chain_id != config.chain_id {
-        anyhow::bail!(
+        return Err(anyhow::anyhow!(
             "Chain ID mismatch: RPC returned {} but config has {}",
             rpc_chain_id,
             config.chain_id
-        );
+        ));
     }
     info!("Chain ID verified: {} (matches RPC)", rpc_chain_id);
 

@@ -3038,6 +3038,7 @@ dependencies = [
  "diesel_migrations",
  "dotenvy",
  "hex",
+ "thiserror",
  "tokio",
  "tracing",
  "tracing-subscriber",
