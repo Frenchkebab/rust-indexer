@@ -6,9 +6,9 @@ use tracing::{Level, info};
 use tracing_subscriber::{EnvFilter, fmt};
 
 pub mod config;
+pub mod indexer;
 pub mod schema;
 pub mod types;
-// pub mod indexer;
 // pub mod storage;
 
 pub use config::Config;
@@ -56,27 +56,20 @@ pub async fn run(config: Config) -> Result<()> {
     info!("  DB Path: {}", config.db_path);
     info!("  Token Address: {:#x}", config.token_address);
 
-    // TODO: Create mpsc channels for pipeline
-    // let (fetcher_tx, parser_rx) = tokio::sync::mpsc::channel(100);
-    // let (parser_tx, storage_rx) = tokio::sync::mpsc::channel(100);
+    // Create Alloy provider for RPC access
+    let provider = indexer::AlloyProvider {
+        url: config.rpc_url.parse()?,
+        token_address: config.token_address,
+    };
 
-    // TODO: Spawn storage task
-    // let storage_handle = tokio::spawn(async move {
-    //     storage::run(storage_rx).await
-    // });
+    // Set start block if not already set
+    let is_start_set = indexer::start_from(&mut conn, config.chain_id, config.start_block)?;
+    if is_start_set {
+        info!("Start block set to {}", config.start_block);
+    }
 
-    // TODO: Spawn parser task
-    // let parser_handle = tokio::spawn(async move {
-    //     indexer::parse_events(parser_rx, parser_tx).await
-    // });
+    // Run event loop (blocks until interrupted)
+    indexer::event_loop(&mut conn, config.chain_id, provider, 100)?;
 
-    // TODO: Run fetcher in main task
-    // indexer::fetch_events(config, fetcher_tx).await?;
-
-    // TODO: Wait for all tasks to complete
-    // parser_handle.await??;
-    // storage_handle.await??;
-
-    info!("Indexing completed!");
     Ok(())
 }
